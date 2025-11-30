@@ -266,19 +266,59 @@ INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
 - ⚠️ Warning about ROS 2 is normal (if ROS 2 not installed)
 - ✅ Model loading progress bar appears (first time only)
 
-**Terminal 2 - Test LLM Service:**
+**Terminal 2 - Start Ollama Service (Required for LLM):**
+```bash
+# First, verify Ollama is installed
+ollama --version
+
+# Check if Ollama is already running
+curl -s http://localhost:11434/api/tags > /dev/null && echo "Ollama is running" || echo "Ollama is not running"
+
+# If not running, start Ollama service
+# Option 1: Using systemd (recommended for Jetson)
+sudo systemctl start ollama
+sudo systemctl enable ollama  # Enable auto-start on boot
+
+# Option 2: Run manually in foreground (for testing)
+# ollama serve
+
+# Verify Ollama is running
+sleep 3
+curl http://localhost:11434/api/tags
+# Should return JSON with available models
+
+# Check if model is downloaded
+ollama list
+# Should show llama3.2:1b or similar
+
+# If model not downloaded, pull it:
+ollama pull llama3.2:1b
+```
+
+**Terminal 3 - Test LLM Service:**
 ```bash
 cd ~/elderly_companion/ai_services
 source venv/bin/activate
 
-# Make sure Ollama is running
-ollama serve
-
-# In another terminal, start LLM service
+# Start LLM service
 python scripts/llm_service_ollama.py
 ```
 
-**Terminal 3 - Test Vision Service:**
+**Expected Output:**
+```
+2024-XX-XX XX:XX:XX - __main__ - WARNING - ROS 2 not available - running without ROS 2 integration
+INFO:     Started server process [XXXXX]
+INFO:     Waiting for application startup.
+2024-XX-XX XX:XX:XX - __main__ - INFO - Using Ollama with model: llama3.2:1b
+2024-XX-XX XX:XX:XX - __main__ - INFO - Ollama host: http://localhost:11434
+2024-XX-XX XX:XX:XX - __main__ - INFO - LLM Service (Ollama) started successfully
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8002 (Press CTRL+C to quit)
+```
+
+**Note:** If you see "Using rule-based responses (Ollama not available)" or "Ollama failed, falling back to rule-based", it means Ollama is not running or not accessible. The service will still work with rule-based responses, but for full functionality, start Ollama first.
+
+**Terminal 4 - Test Vision Service:**
 ```bash
 cd ~/elderly_companion/ai_services
 source venv/bin/activate
@@ -287,25 +327,72 @@ source venv/bin/activate
 python scripts/vision_service_enhanced.py
 ```
 
-**Test each service:**
+**Test each service (in a new terminal):**
 ```bash
-# Test Speech Service (in a new terminal)
+# Test Speech Service
 curl http://localhost:8001/health
 # Expected: {"status":"healthy","service":"speech","model_loaded":true,"ros2_available":false}
 
-# Test LLM Service
+# Test LLM Service Health
 curl http://localhost:8002/health
-# Expected: {"status":"healthy","service":"llm","personality_loaded":true,"ros2_available":false}
+# Expected with Ollama: {"status":"healthy","service":"llm","personality_loaded":true,"ros2_available":false,"ollama_enabled":true,"ollama_status":"available","ollama_model":"llama3.2:1b"}
+# Expected without Ollama: {"status":"healthy","service":"llm","personality_loaded":true,"ros2_available":false,"ollama_enabled":false,"ollama_status":"unavailable"}
 
 # Test LLM chat
 curl -X POST http://localhost:8002/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello, how are you?", "user_id": "test"}'
 
+# Expected with Ollama: Natural conversation response
+# Expected without Ollama (fallback): Rule-based response like "Hello there! I'm your companion. How are you feeling today?"
+
 # Test Vision Service
 curl http://localhost:8003/health
 # Expected: {"status":"healthy","service":"vision","model_loaded":true,"ros2_available":false}
 ```
+
+**Troubleshooting Ollama Connection:**
+
+If you see `ollama request error: timed out` or `Ollama failed, falling back to rule-based`:
+
+1. **Check if Ollama is running:**
+   ```bash
+   systemctl status ollama
+   # OR
+   curl http://localhost:11434/api/tags
+   ```
+
+2. **Start Ollama if not running:**
+   ```bash
+   sudo systemctl start ollama
+   # Wait a few seconds for it to start
+   sleep 5
+   ```
+
+3. **Verify Ollama is accessible:**
+   ```bash
+   curl http://localhost:11434/api/tags
+   # Should return JSON, not an error
+   ```
+
+4. **Check if model is downloaded:**
+   ```bash
+   ollama list
+   # Should show at least one model (e.g., llama3.2:1b)
+   ```
+
+5. **If model is missing, download it:**
+   ```bash
+   ollama pull llama3.2:1b
+   ```
+
+6. **Restart LLM service after Ollama is running:**
+   ```bash
+   # Stop the LLM service (Ctrl+C) and restart it
+   python scripts/llm_service_ollama.py
+   ```
+
+**Note:** The service will work with rule-based fallback even if Ollama is not available. This is intentional for testing. However, for natural conversations, you need Ollama running.
 
 ### 4.2 Test Services with Docker
 
@@ -444,20 +531,46 @@ docker compose logs -f [service_name]
 docker compose restart
 ```
 
-**If Ollama connection fails:**
+**If Ollama connection fails (timeout or "falling back to rule-based"):**
 ```bash
-# Check if Ollama is running
+# 1. Check if Ollama is installed
+ollama --version
+# If not installed, see Step 3.3 above
+
+# 2. Check if Ollama service is running
 systemctl status ollama
+# OR check if process is running
+ps aux | grep ollama
 
-# Start Ollama if not running
+# 3. Start Ollama if not running
 sudo systemctl start ollama
+# OR run manually: ollama serve
 
-# Check Ollama models
-ollama list
+# 4. Wait for Ollama to start (may take 5-10 seconds)
+sleep 5
 
-# Test Ollama directly
+# 5. Verify Ollama is accessible
 curl http://localhost:11434/api/tags
+# Should return JSON with models, not an error
+
+# 6. Check if model is downloaded
+ollama list
+# Should show at least one model (e.g., llama3.2:1b)
+
+# 7. If model is missing, download it
+ollama pull llama3.2:1b
+# This may take several minutes depending on internet speed
+
+# 8. Test Ollama directly
+ollama run llama3.2:1b "Hello"
+# Should return a response
+
+# 9. Restart LLM service after Ollama is running
+# Stop the service (Ctrl+C) and restart:
+python scripts/llm_service_ollama.py
 ```
+
+**Note:** The LLM service will work with rule-based fallback even if Ollama is not available. This is intentional for testing. However, for natural AI conversations, you need Ollama running and a model downloaded.
 
 ### 4.7 Success Criteria
 
@@ -757,3 +870,4 @@ docker stats
 ---
 
 **Need help?** Check the troubleshooting section above or refer to service-specific guides in `elderly_companion/ai_services/`.
+
