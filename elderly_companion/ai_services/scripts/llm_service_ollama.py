@@ -245,29 +245,6 @@ Guidelines:
         else:
             return self.generate_response_rule_based(message, context, user_id)
 
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
-    """Main chat endpoint"""
-    if not llm_node:
-        raise HTTPException(status_code=503, detail="Service not ready")
-    
-    try:
-        response_text = llm_node.generate_response(
-            request.message,
-            request.context,
-            request.user_id
-        )
-        
-        return ChatResponse(
-            response=response_text,
-            context=request.context,
-            confidence=0.85
-        )
-    except Exception as e:
-        logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 # Global ROS 2 node
 llm_node: Optional[LLMService] = None
 
@@ -300,6 +277,28 @@ async def lifespan(app: FastAPI):
     logger.info("LLM Service (Ollama) shut down")
 
 app = FastAPI(title="LLM Service (Ollama)", version="2.0.0", lifespan=lifespan)
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat_endpoint(request: ChatRequest):
+    """Main chat endpoint"""
+    if not llm_node:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    
+    try:
+        response_text = llm_node.generate_response(
+            request.message,
+            request.context,
+            request.user_id
+        )
+        
+        return ChatResponse(
+            response=response_text,
+            context=request.context,
+            confidence=0.85
+        )
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():
