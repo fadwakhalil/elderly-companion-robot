@@ -9,6 +9,7 @@ import base64
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from collections import deque
+from contextlib import asynccontextmanager
 import time
 
 # Configure logging first
@@ -69,7 +70,37 @@ except ImportError:
 
 import json
 
-app = FastAPI(title="Vision Service (Enhanced)", version="2.0.0")
+# Global ROS 2 node
+vision_node: Optional[VisionService] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global vision_node
+    try:
+        if ROS2_AVAILABLE:
+            rclpy.init()
+        vision_node = VisionService()
+        logger.info("Enhanced Vision Service started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start vision service: {e}")
+    
+    yield
+    
+    # Shutdown
+    if vision_node:
+        try:
+            vision_node.destroy_node()
+        except:
+            pass
+    if ROS2_AVAILABLE:
+        try:
+            rclpy.shutdown()
+        except:
+            pass
+    logger.info("Enhanced Vision Service shut down")
+
+app = FastAPI(title="Vision Service (Enhanced)", version="2.0.0", lifespan=lifespan)
 
 class DetectionResult(BaseModel):
     objects: List[Dict[str, Any]]
@@ -556,33 +587,6 @@ class VisionService(Node):
             logger.error(f"Detection error: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
-vision_node: Optional[VisionService] = None
-
-@app.on_event("startup")
-async def startup_event():
-    global vision_node
-    try:
-        if ROS2_AVAILABLE:
-            rclpy.init()
-        vision_node = VisionService()
-        logger.info("Enhanced Vision Service started successfully")
-    except Exception as e:
-        logger.error(f"Failed to start vision service: {e}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    global vision_node
-    if vision_node:
-        try:
-            vision_node.destroy_node()
-        except:
-            pass
-    if ROS2_AVAILABLE:
-        try:
-            rclpy.shutdown()
-        except:
-            pass
-    logger.info("Vision Service shut down")
 
 @app.post("/detect", response_model=DetectionResult)
 async def detect_endpoint(file: UploadFile = File(...)):

@@ -25,6 +25,11 @@ Before starting, make sure you have:
 sudo apt update
 sudo apt upgrade -y
 
+# Enable universe repository (needed for build-essential)
+sudo apt install -y software-properties-common
+sudo add-apt-repository universe
+sudo apt update
+
 # Install essential tools
 sudo apt install -y \
     git \
@@ -35,6 +40,20 @@ sudo apt install -y \
     build-essential \
     cmake \
     pkg-config
+```
+
+**If you get "unable to locate package build-essential" error:**
+
+```bash
+# Make sure universe repository is enabled
+sudo add-apt-repository universe
+sudo apt update
+
+# Try installing again
+sudo apt install -y build-essential
+
+# If still not found, install components individually:
+sudo apt install -y gcc g++ make libc6-dev
 ```
 
 ### 1.2 Install Python 3.11
@@ -82,9 +101,10 @@ sudo apt install -y software-properties-common
 sudo add-apt-repository universe
 sudo apt update && sudo apt install -y curl gnupg lsb-release
 
-# Add ROS 2 GPG key
-sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
-sudo sh -c 'echo "deb [arch=$(dpkg --print-architecture)] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ros2-latest.list'
+# Add ROS 2 GPG key (modern method - apt-key is deprecated)
+# Download and convert the key to the proper format
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg
+sudo sh -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ros2-latest.list'
 
 # Install ROS 2
 sudo apt update
@@ -146,25 +166,51 @@ python3.11 -m venv venv
 # Activate
 source venv/bin/activate
 
-# Upgrade pip
+# Upgrade pip and install essential packages
 pip install --upgrade pip setuptools wheel
+# Install pyyaml (required by launch-ros if ROS 2 is installed)
+pip install pyyaml
 ```
 
 ### 3.2 Install Dependencies
 
-**Important:** Install PyTorch for Jetson (CUDA-enabled)
+**Important:** Install PyTorch for Jetson (CUDA-enabled) with compatible versions
 
 ```bash
-# Install PyTorch for Jetson (CUDA-enabled)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# Option 1: Install PyTorch with specific versions that match requirements
+# This ensures compatibility between torch, torchvision, and torchaudio
+pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118
 
-# Install other requirements
+# Option 2: If Option 1 fails, install requirements first (they specify versions)
+# pip install -r requirements_speech.txt
+# pip install -r requirements_llm.txt
+# pip install -r requirements_vision.txt
+
+# Install other requirements (PyTorch will be skipped if already installed)
 pip install -r requirements_speech.txt
 pip install -r requirements_llm.txt
 pip install -r requirements_vision.txt
 
-# Install httpx for Ollama
+# Install httpx for Ollama (if not already in requirements)
 pip install httpx
+```
+
+**If you get version conflicts, try this approach:**
+
+```bash
+# Uninstall any existing PyTorch packages
+pip uninstall -y torch torchvision torchaudio
+
+# Install PyTorch with compatible versions for Jetson
+pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118
+
+# Then install requirements (use --no-deps to avoid reinstalling PyTorch)
+pip install -r requirements_speech.txt --no-deps
+pip install -r requirements_llm.txt
+pip install -r requirements_vision.txt --no-deps
+
+# Install any missing dependencies
+pip install fastapi==0.104.1 uvicorn[standard]==0.24.0 pydantic==2.5.0
 ```
 
 ### 3.3 Install Ollama
@@ -183,7 +229,255 @@ ollama pull llama3.2:1b
 
 ---
 
-## Step 4: Hardware Assembly (30-60 minutes)
+## Step 4: Test Services on Jetson (15-30 minutes)
+
+**Before assembling hardware, verify all services work correctly on Jetson.**
+
+### 4.1 Test Services Locally (Without Docker)
+
+**Terminal 1 - Test Speech Service:**
+```bash
+cd ~/elderly_companion/ai_services
+source venv/bin/activate
+
+# Start speech service
+python scripts/speech_service.py
+```
+
+**Expected Output:**
+```
+2024-XX-XX XX:XX:XX - __main__ - WARNING - ROS 2 not available - running without ROS 2 integration
+INFO:     Started server process [XXXXX]
+INFO:     Waiting for application startup.
+2024-XX-XX XX:XX:XX - __main__ - INFO - Loading Whisper model: tiny.en
+100%|████████████████████| 75/75 [00:XX<00:XX, X.XXit/s]
+2024-XX-XX XX:XX:XX - __main__ - INFO - Model loaded successfully
+2024-XX-XX XX:XX:XX - __main__ - INFO - Speech Service started successfully
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+```
+
+**Note:** You should NOT see any deprecation warnings about `on_event`. The services now use the modern `lifespan` event handler.
+
+**What to expect:**
+- ✅ Service starts and loads Whisper model (may take 10-30 seconds first time)
+- ✅ Server runs on `http://0.0.0.0:8001`
+- ✅ Service stays running (don't close the terminal)
+- ⚠️ Warning about ROS 2 is normal (if ROS 2 not installed)
+- ✅ Model loading progress bar appears (first time only)
+
+**Terminal 2 - Test LLM Service:**
+```bash
+cd ~/elderly_companion/ai_services
+source venv/bin/activate
+
+# Make sure Ollama is running
+ollama serve
+
+# In another terminal, start LLM service
+python scripts/llm_service_ollama.py
+```
+
+**Terminal 3 - Test Vision Service:**
+```bash
+cd ~/elderly_companion/ai_services
+source venv/bin/activate
+
+# Start vision service
+python scripts/vision_service_enhanced.py
+```
+
+**Test each service:**
+```bash
+# Test Speech Service (in a new terminal)
+curl http://localhost:8001/health
+# Expected: {"status":"healthy","service":"speech","model_loaded":true,"ros2_available":false}
+
+# Test LLM Service
+curl http://localhost:8002/health
+# Expected: {"status":"healthy","service":"llm","personality_loaded":true,"ros2_available":false}
+
+# Test LLM chat
+curl -X POST http://localhost:8002/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello, how are you?", "user_id": "test"}'
+
+# Test Vision Service
+curl http://localhost:8003/health
+# Expected: {"status":"healthy","service":"vision","model_loaded":true,"ros2_available":false}
+```
+
+### 4.2 Test Services with Docker
+
+```bash
+cd ~/elderly_companion/ai_services
+
+# Stop any locally running services (Ctrl+C in their terminals)
+
+# Build Docker images
+docker compose build
+
+# Start all services
+docker compose up -d
+
+# Check status
+docker compose ps
+# All services should show "Up" and "healthy"
+
+# View logs
+docker compose logs -f
+# Press Ctrl+C to exit logs view
+
+# Test all health endpoints
+curl http://localhost:8001/health  # Speech
+curl http://localhost:8002/health  # LLM
+curl http://localhost:8003/health  # Vision
+```
+
+### 4.3 Test Service Functionality
+
+**Test Speech Service:**
+```bash
+# Health check
+curl http://localhost:8001/health
+
+# Test transcription (if you have an audio file)
+# Note: You'll need to implement file upload or use WebSocket
+```
+
+**Test LLM Service:**
+```bash
+# Health check
+curl http://localhost:8002/health
+
+# Test chat
+curl -X POST http://localhost:8002/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello, what can you do?", "user_id": "test"}'
+
+# Expected: JSON response with AI-generated text
+```
+
+**Test Vision Service:**
+```bash
+# Health check
+curl http://localhost:8003/health
+
+# Test detection (if you have a test image)
+curl -X POST http://localhost:8003/detect \
+  -F "image=@test_image.jpg"
+
+# Expected: JSON with detections, person tracking, activity detection
+```
+
+### 4.4 Test ROS 2 Bridge (if ROS 2 installed)
+
+```bash
+cd ~/elderly_companion/ros2_workspace
+
+# Build ROS 2 package
+colcon build --packages-select companion_bridge
+
+# Source workspace
+source install/setup.bash
+
+# Run bridge (in one terminal)
+ros2 run companion_bridge ai_bridge
+
+# In another terminal, check topics
+source install/setup.bash
+ros2 topic list
+# Should see topics like:
+# /ai/vision/detections
+# /ai/speech/transcription
+# /ai/llm/response
+
+# Echo a topic to see data
+ros2 topic echo /ai/vision/detections
+```
+
+### 4.5 Verify System Resources
+
+```bash
+# Check CPU and memory usage
+htop
+# Or
+top
+
+# Check GPU usage (if available)
+sudo tegrastats
+
+# Check disk space
+df -h
+
+# Check Docker resources
+docker stats
+```
+
+### 4.6 Troubleshooting Tests
+
+**If services don't start:**
+```bash
+# Check Python version
+python3.11 --version
+
+# Check virtual environment
+which python
+# Should point to venv/bin/python
+
+# Check installed packages
+pip list | grep -E "torch|whisper|ultralytics|fastapi"
+
+# Check service logs
+docker compose logs [service_name]
+```
+
+**If health checks fail:**
+```bash
+# Check if ports are in use
+sudo netstat -tulpn | grep -E "8001|8002|8003"
+
+# Check service logs
+docker compose logs -f [service_name]
+
+# Restart services
+docker compose restart
+```
+
+**If Ollama connection fails:**
+```bash
+# Check if Ollama is running
+systemctl status ollama
+
+# Start Ollama if not running
+sudo systemctl start ollama
+
+# Check Ollama models
+ollama list
+
+# Test Ollama directly
+curl http://localhost:11434/api/tags
+```
+
+### 4.7 Success Criteria
+
+**Before proceeding to hardware assembly, verify:**
+
+- [ ] All three services start without errors
+- [ ] Health endpoints return 200 OK
+- [ ] Speech service loads Whisper model successfully
+- [ ] LLM service connects to Ollama
+- [ ] Vision service loads YOLO model successfully
+- [ ] Docker services run and stay healthy
+- [ ] ROS 2 bridge works (if ROS 2 installed)
+- [ ] System resources are adequate (check memory/CPU)
+- [ ] No critical errors in logs
+
+**If all checks pass, you're ready for hardware assembly!**
+
+---
+
+## Step 5: Hardware Assembly (30-60 minutes)
 
 ### 4.1 Mount Jetson on Chassis
 
@@ -237,7 +531,7 @@ ollama pull llama3.2:1b
 
 ---
 
-## Step 5: Configure Services for Jetson (15 minutes)
+## Step 6: Configure Services for Jetson (15 minutes)
 
 ### 5.1 Update Service Scripts
 
@@ -286,68 +580,67 @@ sudo systemctl start companion-ai
 
 ---
 
-## Step 6: Test Everything (30 minutes)
+## Step 7: Test Hardware Integration (After Assembly)
 
-### 6.1 Test Services Locally
+**After hardware assembly (Step 5), test hardware components:**
+
+### 7.1 Test Camera
 
 ```bash
-# Activate virtual environment
-cd ~/elderly_companion/ai_services
-source venv/bin/activate
+# Check if camera is detected
+ls /dev/video*
 
-# Test speech service
-python scripts/speech_service.py
+# Install v4l2 tools if not already installed
+sudo apt install -y v4l-utils
 
-# Test vision service (in another terminal)
-python scripts/vision_service_enhanced.py
+# List camera devices
+v4l2-ctl --list-devices
 
-# Test LLM service (in another terminal)
-python scripts/llm_service_ollama.py
+# Test camera capture
+fswebcam test.jpg
+# Or use OpenCV
+python3 -c "import cv2; cap = cv2.VideoCapture(0); ret, frame = cap.read(); cv2.imwrite('test.jpg', frame) if ret else print('Camera not working')"
 ```
 
-### 6.2 Test Docker Services
+### 7.2 Test Audio (Microphone/Speaker)
 
 ```bash
-cd ~/elderly_companion/ai_services
+# List recording devices
+arecord -l
 
-# Build and start services
-docker compose build
-docker compose up -d
+# List playback devices
+aplay -l
 
-# Check status
-docker compose ps
+# Test microphone recording
+arecord -d 3 -f cd test.wav
 
-# View logs
-docker compose logs -f [service_name]
-
-# Test endpoints
-curl http://localhost:8001/health  # Speech
-curl http://localhost:8002/health  # LLM
-curl http://localhost:8003/health  # Vision
+# Test speaker playback
+aplay test.wav
 ```
 
-### 6.3 Test ROS 2 Bridge (if ROS 2 installed)
+### 7.3 Test Motors (if applicable)
 
 ```bash
-cd ~/elderly_companion/ros2_workspace
+# Test motor control (implementation depends on your motor driver)
+# Example for GPIO-based control:
+python3 << EOF
+import Jetson.GPIO as GPIO
+# Your motor test code here
+EOF
+```
 
-# Build package
-colcon build --packages-select companion_bridge
+### 7.4 Test Vision Service with Real Camera
 
-# Source workspace
-source install/setup.bash
-
-# Run bridge
-ros2 run companion_bridge ai_bridge
-
-# In another terminal, test topics
-ros2 topic list
-ros2 topic echo /ai/vision/detections
+```bash
+# Update vision service to use camera device
+# Then test with real camera feed
+curl -X POST http://localhost:8003/detect \
+  -F "image=@test.jpg"
 ```
 
 ---
 
-## Step 7: Performance Optimization (Optional)
+## Step 8: Performance Optimization (Optional)
 
 ### 7.1 Set Power Mode
 
@@ -389,7 +682,7 @@ sudo jetson_stats
 
 ---
 
-## Step 8: Deployment Checklist
+## Step 9: Deployment Checklist
 
 - [ ] Jetson is flashed and accessible
 - [ ] System updated and essential tools installed

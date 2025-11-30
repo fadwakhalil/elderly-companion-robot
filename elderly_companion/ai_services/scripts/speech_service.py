@@ -9,6 +9,7 @@ import logging
 import asyncio
 from pathlib import Path
 from typing import Optional
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
@@ -55,7 +56,38 @@ except ImportError:
     WHISPER_AVAILABLE = False
     logger.warning("Whisper not available - some features will be limited")
 
-app = FastAPI(title="Speech Service", version="1.0.0")
+# Global ROS 2 node
+speech_node: Optional[SpeechService] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global speech_node
+    try:
+        if ROS2_AVAILABLE:
+            rclpy.init()
+        speech_node = SpeechService()
+        logger.info("Speech Service started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start speech service: {e}")
+        # Don't raise - allow service to start even if ROS 2 fails
+    
+    yield
+    
+    # Shutdown
+    if speech_node:
+        try:
+            speech_node.destroy_node()
+        except:
+            pass
+    if ROS2_AVAILABLE:
+        try:
+            rclpy.shutdown()
+        except:
+            pass
+    logger.info("Speech Service shut down")
+
+app = FastAPI(title="Speech Service", version="1.0.0", lifespan=lifespan)
 
 class SpeechService(Node):
     def __init__(self):
@@ -138,35 +170,6 @@ class SpeechService(Node):
             logger.error(f"Transcription error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-# Global ROS 2 node
-speech_node: Optional[SpeechService] = None
-
-@app.on_event("startup")
-async def startup_event():
-    global speech_node
-    try:
-        if ROS2_AVAILABLE:
-            rclpy.init()
-        speech_node = SpeechService()
-        logger.info("Speech Service started successfully")
-    except Exception as e:
-        logger.error(f"Failed to start speech service: {e}")
-        # Don't raise - allow service to start even if ROS 2 fails
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    global speech_node
-    if speech_node:
-        try:
-            speech_node.destroy_node()
-        except:
-            pass
-    if ROS2_AVAILABLE:
-        try:
-            rclpy.shutdown()
-        except:
-            pass
-    logger.info("Speech Service shut down")
 
 @app.websocket("/ws/speech")
 async def websocket_endpoint(websocket: WebSocket):

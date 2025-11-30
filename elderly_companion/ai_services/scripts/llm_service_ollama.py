@@ -8,6 +8,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -56,7 +57,38 @@ except ImportError:
 
 import yaml
 
-app = FastAPI(title="LLM Service (Ollama)", version="2.0.0")
+# Global ROS 2 node
+llm_node: Optional[LLMService] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global llm_node
+    try:
+        if ROS2_AVAILABLE:
+            rclpy.init()
+        llm_node = LLMService()
+        logger.info("LLM Service (Ollama) started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start LLM service: {e}")
+        # Don't raise - allow service to start even if ROS 2 fails
+    
+    yield
+    
+    # Shutdown
+    if llm_node:
+        try:
+            llm_node.destroy_node()
+        except:
+            pass
+    if ROS2_AVAILABLE:
+        try:
+            rclpy.shutdown()
+        except:
+            pass
+    logger.info("LLM Service (Ollama) shut down")
+
+app = FastAPI(title="LLM Service (Ollama)", version="2.0.0", lifespan=lifespan)
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)
@@ -246,34 +278,6 @@ Guidelines:
         else:
             return self.generate_response_rule_based(message, context, user_id)
 
-llm_node: Optional[LLMService] = None
-
-@app.on_event("startup")
-async def startup_event():
-    global llm_node
-    try:
-        if ROS2_AVAILABLE:
-            rclpy.init()
-        llm_node = LLMService()
-        logger.info("LLM Service (Ollama) started successfully")
-    except Exception as e:
-        logger.error(f"Failed to start LLM service: {e}")
-        # Don't raise - allow service to start even if ROS 2 fails
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    global llm_node
-    if llm_node:
-        try:
-            llm_node.destroy_node()
-        except:
-            pass
-    if ROS2_AVAILABLE:
-        try:
-            rclpy.shutdown()
-        except:
-            pass
-    logger.info("LLM Service shut down")
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
