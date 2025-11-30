@@ -587,6 +587,37 @@ class VisionService(Node):
             logger.error(f"Detection error: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
+# Global ROS 2 node
+vision_node: Optional[VisionService] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global vision_node
+    try:
+        if ROS2_AVAILABLE:
+            rclpy.init()
+        vision_node = VisionService()
+        logger.info("Enhanced Vision Service started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start vision service: {e}")
+    
+    yield
+    
+    # Shutdown
+    if vision_node:
+        try:
+            vision_node.destroy_node()
+        except:
+            pass
+    if ROS2_AVAILABLE:
+        try:
+            rclpy.shutdown()
+        except:
+            pass
+    logger.info("Enhanced Vision Service shut down")
+
+app = FastAPI(title="Vision Service (Enhanced)", version="2.0.0", lifespan=lifespan)
 
 @app.post("/detect", response_model=DetectionResult)
 async def detect_endpoint(file: UploadFile = File(...)):

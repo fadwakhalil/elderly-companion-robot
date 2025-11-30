@@ -57,39 +57,6 @@ except ImportError:
 
 import yaml
 
-# Global ROS 2 node
-llm_node: Optional[LLMService] = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    global llm_node
-    try:
-        if ROS2_AVAILABLE:
-            rclpy.init()
-        llm_node = LLMService()
-        logger.info("LLM Service (Ollama) started successfully")
-    except Exception as e:
-        logger.error(f"Failed to start LLM service: {e}")
-        # Don't raise - allow service to start even if ROS 2 fails
-    
-    yield
-    
-    # Shutdown
-    if llm_node:
-        try:
-            llm_node.destroy_node()
-        except:
-            pass
-    if ROS2_AVAILABLE:
-        try:
-            rclpy.shutdown()
-        except:
-            pass
-    logger.info("LLM Service (Ollama) shut down")
-
-app = FastAPI(title="LLM Service (Ollama)", version="2.0.0", lifespan=lifespan)
-
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)
     context: Optional[Dict[str, Any]] = None
@@ -300,6 +267,39 @@ async def chat_endpoint(request: ChatRequest):
     except Exception as e:
         logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Global ROS 2 node
+llm_node: Optional[LLMService] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global llm_node
+    try:
+        if ROS2_AVAILABLE:
+            rclpy.init()
+        llm_node = LLMService()
+        logger.info("LLM Service (Ollama) started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start LLM service: {e}")
+        # Don't raise - allow service to start even if ROS 2 fails
+    
+    yield
+    
+    # Shutdown
+    if llm_node:
+        try:
+            llm_node.destroy_node()
+        except:
+            pass
+    if ROS2_AVAILABLE:
+        try:
+            rclpy.shutdown()
+        except:
+            pass
+    logger.info("LLM Service (Ollama) shut down")
+
+app = FastAPI(title="LLM Service (Ollama)", version="2.0.0", lifespan=lifespan)
 
 @app.get("/health")
 async def health_check():

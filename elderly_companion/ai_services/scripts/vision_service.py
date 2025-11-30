@@ -71,39 +71,6 @@ except ImportError:
 
 import json
 
-# Global ROS 2 node
-vision_node: Optional[VisionService] = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    global vision_node
-    try:
-        if ROS2_AVAILABLE:
-            rclpy.init()
-        vision_node = VisionService()
-        logger.info("Vision Service started successfully")
-    except Exception as e:
-        logger.error(f"Failed to start vision service: {e}")
-        # Don't raise - allow service to start even if ROS 2 fails
-    
-    yield
-    
-    # Shutdown
-    if vision_node:
-        try:
-            vision_node.destroy_node()
-        except:
-            pass
-    if ROS2_AVAILABLE:
-        try:
-            rclpy.shutdown()
-        except:
-            pass
-    logger.info("Vision Service shut down")
-
-app = FastAPI(title="Vision Service", version="1.0.0", lifespan=lifespan)
-
 class DetectionResult(BaseModel):
     objects: List[Dict[str, Any]]
     person_detected: bool
@@ -338,6 +305,37 @@ class VisionService(Node):
             logger.error(f"Detection error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
+# Global ROS 2 node
+vision_node: Optional[VisionService] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global vision_node
+    try:
+        if ROS2_AVAILABLE:
+            rclpy.init()
+        vision_node = VisionService()
+        logger.info("Vision Service started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start vision service: {e}")
+    
+    yield
+    
+    # Shutdown
+    if vision_node:
+        try:
+            vision_node.destroy_node()
+        except:
+            pass
+    if ROS2_AVAILABLE:
+        try:
+            rclpy.shutdown()
+        except:
+            pass
+    logger.info("Vision Service shut down")
+
+app = FastAPI(title="Vision Service", version="1.0.0", lifespan=lifespan)
 
 @app.post("/detect", response_model=DetectionResult)
 async def detect_endpoint(file: UploadFile = File(...)):
