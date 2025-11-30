@@ -1,0 +1,17 @@
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+httpx==0.25.2
+
+# LLM integration
+ollama==0.1.6
+
+# Configuration
+pyyaml==6.0.1
+
+# ROS 2 - Install via rosdep, not pip (see note below)
+# rclpy==3.3.9  # Commented out - install via rosdep
+
+# Utilities
+python-dotenv==1.0.0

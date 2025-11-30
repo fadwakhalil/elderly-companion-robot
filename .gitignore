@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Virtual environments
+elderly_companion/ai_services/venv/
+scripts/venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+elderly_companion/ai_services/logs/
+
+# Models (large files - consider Git LFS)
+*.pt
+*.pth
+*.onnx
+*.h5
+*.pb
+models/
+elderly_companion/ai_services/models/*.pt
+elderly_companion/ai_services/models/*.pth
+
+# Docker
+.dockerignore
+
+# Environment variables
+.env
+.env.local
+
+# Test data (optional - remove if you want to track test files)
+test_data/
+*.jpg
+*.png
+*.jpeg
+!elderly_companion/ai_services/test_data/.gitkeep
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# ROS 2
+install/
+log/
+build/
+elderly_companion/ros2_workspace/install/
+elderly_companion/ros2_workspace/log/
+elderly_companion/ros2_workspace/build/

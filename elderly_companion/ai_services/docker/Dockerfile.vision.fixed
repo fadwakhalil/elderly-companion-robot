@@ -1,0 +1,50 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip first
+RUN pip install --upgrade pip setuptools wheel
+
+# Install CPU-only PyTorch (explicitly CPU to avoid CUDA issues)
+# Using PyTorch 2.1.0 CPU-only version
+RUN for i in 1 2 3; do \
+        pip install --no-cache-dir \
+            torch==2.1.0+cpu \
+            torchvision==0.16.0+cpu \
+            --index-url https://download.pytorch.org/whl/cpu && break || \
+        (echo "Retry $i failed, waiting 5 seconds..." && sleep 5); \
+    done || \
+    # Fallback: try without +cpu suffix (for compatibility)
+    pip install --no-cache-dir torch==2.1.0 torchvision==0.16.0
+
+# Copy and install other requirements
+COPY requirements_vision.txt .
+RUN pip install --no-cache-dir -r requirements_vision.txt
+
+COPY scripts/vision_service.py .
+COPY scripts/__init__.py scripts/
+
+RUN mkdir -p /app/test_data /app/models /app/logs
+
+# Set environment variables for CPU-only operation
+ENV CUDA_VISIBLE_DEVICES=""
+ENV TORCH_DEVICE="cpu"
+
+EXPOSE 8003
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8003/health || exit 1
+
+CMD ["python", "vision_service.py"]
+

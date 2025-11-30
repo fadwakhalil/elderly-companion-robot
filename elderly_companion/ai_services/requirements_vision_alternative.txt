@@ -1,0 +1,23 @@
+# Alternative requirements with newer versions for better stability
+# Use this if the default versions cause segfaults
+
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+python-multipart==0.0.6
+
+# Computer vision - newer versions
+opencv-python==4.9.0.80
+ultralytics==8.2.0
+# PyTorch - will be installed separately in Dockerfile with CPU-only version
+# torch==2.2.0
+# torchvision==0.17.0
+
+# Image processing
+pillow==10.2.0
+numpy==1.26.3
+
+# Utilities
+aiofiles==23.2.1
+

@@ -1,0 +1,20 @@
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+websockets==12.0
+
+# Speech processing
+openai-whisper==20231117
+
+# PyTorch (for Python 3.11)
+torch==2.1.0
+torchaudio==2.1.0
+numpy==1.24.3
+
+# ROS 2 - Install via rosdep, not pip (see note below)
+# rclpy==3.3.9  # Commented out - install via rosdep
+
+# Utilities
+python-multipart==0.0.6
+aiofiles==23.2.1

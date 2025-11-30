@@ -1,0 +1,108 @@
+services:
+  speech-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.speech
+    container_name: companion-speech-service
+    volumes:
+      - ./test_data:/app/test_data:ro
+      - ./models:/app/models:rw
+      - ./logs:/app/logs:rw
+    ports:
+      - "8001:8001"
+    environment:
+      - ROS_DOMAIN_ID=42
+      - LOG_LEVEL=INFO
+      - MODEL_SIZE=tiny.en
+    networks:
+      - companion-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+        reservations:
+          memory: 1G
+          cpus: '1'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  llm-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.llm
+    container_name: companion-llm-service
+    volumes:
+      - ./models:/app/models:rw
+      - ./config:/app/config:ro
+      - ./logs:/app/logs:rw
+    ports:
+      - "8002:8002"
+    environment:
+      - ROS_DOMAIN_ID=42
+      - LOG_LEVEL=INFO
+    networks:
+      - companion-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  vision-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.vision
+    container_name: companion-vision-service
+    volumes:
+      - ./test_data:/app/test_data:ro
+      - ./models:/app/models:rw
+      - ./logs:/app/logs:rw
+    ports:
+      - "8003:8003"
+    environment:
+      - ROS_DOMAIN_ID=42
+      - LOG_LEVEL=INFO
+      - YOLO_MODEL=yolov8n.pt
+      # Force CPU-only operation
+      - CUDA_VISIBLE_DEVICES=""
+      - TORCH_DEVICE=cpu
+      # Limit threads to prevent conflicts
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+      - NUMEXPR_NUM_THREADS=2
+    networks:
+      - companion-network
+    restart: unless-stopped
+    # Resource limits for vision service (needs more memory for YOLO)
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4'
+        reservations:
+          memory: 2G
+          cpus: '2'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  companion-network:
+    driver: bridge
